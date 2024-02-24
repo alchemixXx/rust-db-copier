@@ -1,0 +1,34 @@
+[source]
+username = "source-user-name"
+password = "source-db-pass"
+host = "source-db-host"
+port = "source-db-port"
+database = "source-db-name"
+
+[target]
+username = "target-user-name"
+password = "target-db-pass"
+host = "target-db-host"
+port = "target-db-port"
+database = "target-db-name"
+
+[technology]
+category = "mysql"
+
+[tables]
+data_source = [
+  "priorities",
+  "states",
+  "statuses",
+  "classes",
+  "categories",
+  "issue_types",
+  "issue_type_priorities",
+  "issue_type_categories",
+  "issue_type_property_types",
+  "issue_type_properties",
+  "issue_provider_system_mappings",
+]
+
+
+
