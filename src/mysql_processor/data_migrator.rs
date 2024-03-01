@@ -1,54 +1,26 @@
 use std::collections::HashMap;
 
-use crate::{ config::Config, mysql_processor::db::get_connection };
-use mysql::{ from_value, prelude::Queryable, Row };
+use crate::{ config::Config, error::CustomError, mysql_processor::db::get_connection };
+use mysql::{ from_value, prelude::Queryable, PooledConn, Row };
 
+use crate::CustomResult;
 pub struct DataMigrator {
     pub config: Config,
 }
 
 impl DataMigrator {
-    pub fn migrate(&self) {
+    pub fn migrate(&self) -> CustomResult<()> {
         println!("Connecting to source database");
-        let mut source_conn = get_connection(&self.config.source).unwrap();
+        let mut source_conn = get_connection(&self.config.source)?;
         println!("Connected to source database");
 
         println!("Connecting to target database");
-        let mut target_conn = get_connection(&self.config.target).unwrap();
+        let mut target_conn = get_connection(&self.config.target)?;
         println!("Connected to target database");
 
         for table in &self.config.tables.data_source {
             println!("Migrating data for table: {}", table);
-            let column_query = format!("SHOW COLUMNS FROM {};", table);
-            let columns: Vec<String> = source_conn
-                .query_map(column_query, |row: Row| {
-                    let columns = row.columns_ref();
-                    let mut column_index: Option<usize> = None;
-                    for (index, column) in columns.iter().enumerate() {
-                        if column.name_str() == "Field" {
-                            column_index = Some(index);
-                            break;
-                        }
-                    }
-                    if column_index.is_none() {
-                        panic!("No such column: `Field` in row {:?}", row);
-                    }
-
-                    let column: String = row.get(column_index.unwrap()).unwrap();
-                    column
-                })
-                .unwrap();
-
-            let data_query = format!("SELECT * FROM {}", table);
-            let data: Vec<HashMap<String, mysql::Value>> = source_conn
-                .query_map(data_query, |row: Row| {
-                    let mut map: HashMap<String, mysql::Value> = HashMap::new();
-                    for (index, column_name) in columns.iter().enumerate() {
-                        map.insert(column_name.clone(), row.get(index).unwrap());
-                    }
-                    map
-                })
-                .unwrap();
+            let data: Vec<HashMap<String, mysql::Value>> = self.get_data(&mut source_conn, table)?;
 
             for row in data {
                 let column_names: Vec<String> = row
@@ -84,9 +56,54 @@ impl DataMigrator {
                     values_as_strings.join(", ")
                 );
 
-                target_conn.exec_drop(insert_query, ()).unwrap();
+                let insert_result = target_conn.exec_drop(insert_query, ());
+
+                match insert_result {
+                    Ok(_) => {}
+                    Err(err) => {
+                        return Err(CustomError::DbQueryExecution(err.to_string()));
+                    }
+                }
             }
             println!("Migrated data for table: {}", table);
         }
+        Ok(())
+    }
+
+    fn get_columns(&self, connection: &mut PooledConn, table: &str) -> CustomResult<Vec<String>> {
+        let column_query = format!("SHOW COLUMNS FROM {};", table);
+        let columns_result = connection.query_map(column_query, |row: Row| {
+            let columns = row.columns_ref();
+            if columns[0].name_str() != "Field" {
+                panic!("Got wrong table definition structure");
+            }
+            let column: String = row.get(0).unwrap();
+
+            column
+        });
+
+        match columns_result {
+            Ok(values) => Ok(values),
+            Err(_) => Err(CustomError::DbTableStructure),
+        }
+    }
+
+    fn get_data(
+        &self,
+        connection: &mut PooledConn,
+        table: &str
+    ) -> CustomResult<Vec<HashMap<String, mysql::Value>>> {
+        let columns = self.get_columns(connection, table)?;
+        let data: Vec<HashMap<String, mysql::Value>> = connection
+            .query_map(format!("SELECT * FROM {}", table), |row: Row| {
+                let mut map: HashMap<String, mysql::Value> = HashMap::new();
+                for (index, column_name) in columns.iter().enumerate() {
+                    map.insert(column_name.clone(), row.get(index).unwrap());
+                }
+                map
+            })
+            .unwrap();
+
+        Ok(data)
     }
 }
