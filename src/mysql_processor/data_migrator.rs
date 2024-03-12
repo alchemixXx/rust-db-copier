@@ -72,20 +72,40 @@ impl DataMigrator {
 
     fn get_columns(&self, connection: &mut PooledConn, table: &str) -> CustomResult<Vec<String>> {
         let column_query = format!("SHOW COLUMNS FROM {};", table);
-        let columns_result = connection.query_map(column_query, |row: Row| {
-            let columns = row.columns_ref();
-            if columns[0].name_str() != "Field" {
-                panic!("Got wrong table definition structure");
-            }
-            let column: String = row.get(0).unwrap();
+        let rows: Vec<String> = connection
+            .query_map(
+                column_query,
+                |row: Row| -> CustomResult<String> {
+                    let columns = row.columns_ref();
 
-            column
-        });
+                    let mut index: Option<usize> = None;
+                    for (i, column) in columns.into_iter().enumerate() {
+                        if column.name_str() == "Field" {
+                            index = Some(i);
+                            break;
+                        }
+                    }
 
-        match columns_result {
-            Ok(values) => Ok(values),
-            Err(_) => Err(CustomError::DbTableStructure),
-        }
+                    let value = (match index {
+                        None => Err(CustomError::DbTableStructure),
+                        Some(value) => {
+                            let query: String = row
+                                .get(value)
+                                .expect("Value should be present in the Roo");
+
+                            Ok(query)
+                        }
+                    })?;
+
+                    Ok(value)
+                }
+            )
+            .map_err(|err| CustomError::DbQueryExecution(err.to_string()))?
+            .into_iter()
+            .filter_map(|el| el.map_err(|err| err).ok())
+            .collect();
+
+        Ok(rows)
     }
 
     fn get_data(

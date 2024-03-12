@@ -40,26 +40,33 @@ impl StructureMigrator {
         table: &String
     ) -> CustomResult<String> {
         let ddl_query = format!("SHOW CREATE TABLE `{}`", table);
-        let ddl_statement_result = connection.query_map(ddl_query, |row: Row| {
-            let columns = row.columns_ref();
-            if columns[1].name_str() != "Create Table" {
-                panic!("Got wrong table definition structure");
-            }
-            let column: String = row.get(1).unwrap();
+        let row = connection
+            .query_first(ddl_query)
+            .map_err(|err| CustomError::DbQueryExecution(err.to_string()))
+            .and_then(|maybe_row|
+                maybe_row.map_or(Err(CustomError::DbTableStructure), |row: Row| Ok(row))
+            )
+            .map_err(|_| CustomError::DbTableStructure)?;
 
-            column
-        });
-
-        match ddl_statement_result {
-            Err(_) => Err(CustomError::DbTableStructure),
-            Ok(res) => {
-                if res.len() == 0 {
-                    return Err(CustomError::DbTableStructure);
-                }
-
-                Ok(res[0].clone())
+        let mut index: Option<usize> = None;
+        let columns = row.columns_ref();
+        for (i, column) in columns.into_iter().enumerate() {
+            if column.name_str() == "Create Table" {
+                index = Some(i);
+                break;
             }
         }
+
+        let value = (match index {
+            None => Err(CustomError::DbTableStructure),
+            Some(value) => {
+                let query: String = row.get(value).expect("Value should be present in the Roo");
+
+                Ok(query)
+            }
+        })?;
+
+        Ok(value)
     }
 }
 
