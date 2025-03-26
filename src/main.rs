@@ -1,25 +1,33 @@
 use clap::Parser;
-mod config;
-mod traits;
-mod mysql_processor;
-mod error;
 mod cli;
+mod config;
+mod error;
+mod logger;
+mod mysql_processor;
+mod psql_processor;
+mod traits;
 use cli::CLi;
 use error::CustomResult;
-use mysql_processor::migrator::Migrator;
+use logger::Logger;
+use mysql_processor::migrator::Migrator as MysqlMigrator;
+use psql_processor::migrator::Migrator as PsqllMigrator;
 
-fn main() -> CustomResult<()> {
+#[tokio::main]
+async fn main() -> CustomResult<()> {
     println!("Reading cli args...");
     let cli_args = CLi::parse();
     println!("CLI args: {:#?}", cli_args);
-
-    println!("Reading script config");
     let config = config::read_config();
-    println!("Read script config");
 
+    Logger::init(config.log.log_level);
     if config.technology.category == "mysql" {
-        let migrator = Migrator { config };
-        migrator.migrate()?;
+        let migrator = MysqlMigrator { config };
+        migrator.migrate().await?;
+        return Ok(());
+    }
+    if config.technology.category == "postgres" {
+        let migrator = PsqllMigrator { config };
+        migrator.migrate().await?;
         return Ok(());
     }
 

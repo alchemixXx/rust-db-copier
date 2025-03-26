@@ -1,9 +1,10 @@
 use crate::config::Config;
+use crate::error::{CustomError, CustomResult};
+use crate::logger::Logger;
 use crate::mysql_processor::db::get_connection;
-use mysql::PooledConn;
-use mysql::{ prelude::Queryable, Row };
 use crate::traits::StructureMigratorTrait;
-use crate::error::{ CustomError, CustomResult };
+use mysql::PooledConn;
+use mysql::{prelude::Queryable, Row};
 pub struct StructureMigrator {
     pub config: Config,
 }
@@ -12,21 +13,22 @@ impl StructureMigrator {
     fn exec_no_output_statement(
         &self,
         connection: &mut PooledConn,
-        query: String
+        query: String,
     ) -> CustomResult<()> {
         let result = connection.query_drop(query);
 
         match result {
             Ok(_) => Ok(()),
-            Err(err) => Err(CustomError::DbQueryExecution(err.to_string())),
+            Err(err) => {
+                println!("Error: {:?}", err);
+                Err(CustomError::QueryExecution)
+            }
         }
     }
 
     fn get_tables(&self, connection: &mut PooledConn) -> CustomResult<Vec<String>> {
-        let tables: Result<Vec<String>, mysql::Error> = connection.query_map(
-            "SHOW TABLES",
-            |table_name| table_name
-        );
+        let tables: Result<Vec<String>, mysql::Error> =
+            connection.query_map("SHOW TABLES", |table_name| table_name);
 
         match tables {
             Ok(data) => Ok(data),
@@ -37,20 +39,23 @@ impl StructureMigrator {
     fn get_create_table_ddl(
         &self,
         connection: &mut PooledConn,
-        table: &String
+        table: &String,
     ) -> CustomResult<String> {
         let ddl_query = format!("SHOW CREATE TABLE `{}`", table);
         let row = connection
             .query_first(ddl_query)
-            .map_err(|err| CustomError::DbQueryExecution(err.to_string()))
-            .and_then(|maybe_row|
+            .map_err(|err| {
+                println!("Error: {:?}", err);
+                CustomError::QueryExecution
+            })
+            .and_then(|maybe_row| {
                 maybe_row.map_or(Err(CustomError::DbTableStructure), |row: Row| Ok(row))
-            )
+            })
             .map_err(|_| CustomError::DbTableStructure)?;
 
         let mut index: Option<usize> = None;
         let columns = row.columns_ref();
-        for (i, column) in columns.into_iter().enumerate() {
+        for (i, column) in columns.iter().enumerate() {
             if column.name_str() == "Create Table" {
                 index = Some(i);
                 break;
@@ -71,41 +76,42 @@ impl StructureMigrator {
 }
 
 impl StructureMigratorTrait for StructureMigrator {
-    fn migrate(&self) -> CustomResult<()> {
-        println!("Connecting to source database");
+    async fn migrate(&self) -> CustomResult<()> {
+        let logger = Logger::new();
+        logger.info("Connecting to source database");
         let mut source_conn = get_connection(&self.config.source)?;
-        println!("Connected to source database");
+        logger.info("Connected to source database");
 
-        println!("Connecting to target database");
+        logger.info("Connecting to target database");
         let mut target_conn = get_connection(&self.config.target)?;
-        println!("Connected to target database");
+        logger.info("Connected to target database");
 
-        println!("Reading target tables");
+        logger.info("Reading target tables");
         let target_tables: Vec<String> = self.get_tables(&mut target_conn)?;
-        println!("Read target tables: {}", target_tables.len());
+        logger.info(format!("Read target tables: {}", target_tables.len()).as_str());
 
-        println!("Disabling FK checks");
+        logger.info("Disabling FK checks");
         self.exec_no_output_statement(&mut target_conn, "SET FOREIGN_KEY_CHECKS = 0".to_string())?;
-        println!("Disabled FK checks");
+        logger.info("Disabled FK checks");
 
-        println!("Dropping target tables");
+        logger.info("Dropping target tables");
         for table in &target_tables {
             self.exec_no_output_statement(
                 &mut target_conn,
-                format!("DROP TABLE IF EXISTS `{}`", table)
+                format!("DROP TABLE IF EXISTS `{}`", table),
             )?;
         }
-        println!("Dropped target tables");
+        logger.info("Dropped target tables");
 
-        println!("Reading remote tables");
+        logger.info("Reading remote tables");
         let source_tables: Vec<String> = self.get_tables(&mut source_conn)?;
-        println!("Read remote tables: {}", source_tables.len());
+        logger.info(format!("Read remote tables: {}", source_tables.len()).as_str());
 
         let mut table_skipped: Vec<&str> = vec![];
         let mut table_processed: Vec<&str> = vec![];
 
         for table in &source_tables {
-            if self.skip_table(&table) || self.is_private_table(&table) {
+            if self.skip_table(table) || self.is_private_table(table) {
                 table_skipped.push(table);
                 continue;
             }
@@ -117,18 +123,18 @@ impl StructureMigratorTrait for StructureMigrator {
             table_processed.push(table);
         }
 
-        println!("Skipped tables: {}", table_skipped.len());
-        println!("Processed tables: {}", table_processed.len());
+        logger.info(format!("Skipped tables: {}", table_skipped.len()).as_str());
+        logger.info(format!("Processed tables: {}", table_processed.len()).as_str());
 
-        println!("Enabling FK checks");
+        logger.info("Enabling FK checks");
         self.exec_no_output_statement(&mut target_conn, "SET FOREIGN_KEY_CHECKS = 1".to_string())?;
-        println!("Enabled FK checks");
+        logger.info("Enabled FK checks");
 
         Ok(())
     }
 
     fn is_private_table(&self, table_name: &str) -> bool {
-        let internal_tables = vec!["schema_migrations", "ar_internal_metadata"];
+        let internal_tables = ["schema_migrations", "ar_internal_metadata"];
 
         internal_tables.contains(&table_name)
     }

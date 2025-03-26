@@ -1,8 +1,8 @@
-use regex::Regex;
 use crate::error::CustomResult;
+use regex::Regex;
 
 pub trait StructureMigratorTrait {
-    fn migrate(&self) -> CustomResult<()>;
+    async fn migrate(&self) -> CustomResult<()>;
 
     fn is_private_table(&self, table_name: &str) -> bool;
 

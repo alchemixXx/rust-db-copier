@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::{ config::Config, error::CustomError, mysql_processor::db::get_connection };
-use mysql::{ from_value, prelude::Queryable, PooledConn, Row };
+use crate::{config::Config, error::CustomError, mysql_processor::db::get_connection};
+use mysql::{from_value, prelude::Queryable, PooledConn, Row};
 
 use crate::CustomResult;
 pub struct DataMigrator {
@@ -20,7 +20,8 @@ impl DataMigrator {
 
         for table in &self.config.tables.data_source {
             println!("Migrating data for table: {}", table);
-            let data: Vec<HashMap<String, mysql::Value>> = self.get_data(&mut source_conn, table)?;
+            let data: Vec<HashMap<String, mysql::Value>> =
+                self.get_data(&mut source_conn, table)?;
 
             for row in data {
                 let column_names: Vec<String> = row
@@ -28,23 +29,18 @@ impl DataMigrator {
                     .map(|(key, _)| format!("`{}`", key.as_str()))
                     .collect();
 
-                let values: Vec<mysql::Value> = row
-                    .iter()
-                    .map(|(_, value)| value.clone())
-                    .collect();
+                let values: Vec<mysql::Value> = row.values().map(|value| value.clone()).collect();
 
                 let values_as_strings: Vec<String> = values
                     .iter()
-                    .map(|value| {
-                        match value {
-                            mysql::Value::NULL => "NULL".to_string(),
-                            _ => {
-                                let mut value = from_value::<String>(value.clone());
-                                if value.contains('\'') {
-                                    value = value.replace('\'', "\\'");
-                                }
-                                format!("'{}'", value)
+                    .map(|value| match value {
+                        mysql::Value::NULL => "NULL".to_string(),
+                        _ => {
+                            let mut value = from_value::<String>(value.clone());
+                            if value.contains('\'') {
+                                value = value.replace('\'', "\\'");
                             }
+                            format!("'{}'", value)
                         }
                     })
                     .collect();
@@ -61,7 +57,8 @@ impl DataMigrator {
                 match insert_result {
                     Ok(_) => {}
                     Err(err) => {
-                        return Err(CustomError::DbQueryExecution(err.to_string()));
+                        println!("Error: {:?}", err);
+                        return Err(CustomError::QueryExecution);
                     }
                 }
             }
@@ -73,34 +70,33 @@ impl DataMigrator {
     fn get_columns(&self, connection: &mut PooledConn, table: &str) -> CustomResult<Vec<String>> {
         let column_query = format!("SHOW COLUMNS FROM {};", table);
         let rows: Vec<String> = connection
-            .query_map(
-                column_query,
-                |row: Row| -> CustomResult<String> {
-                    let columns = row.columns_ref();
+            .query_map(column_query, |row: Row| -> CustomResult<String> {
+                let columns = row.columns_ref();
 
-                    let mut index: Option<usize> = None;
-                    for (i, column) in columns.into_iter().enumerate() {
-                        if column.name_str() == "Field" {
-                            index = Some(i);
-                            break;
-                        }
+                let mut index: Option<usize> = None;
+                for (i, column) in columns.iter().enumerate() {
+                    if column.name_str() == "Field" {
+                        index = Some(i);
+                        break;
                     }
-
-                    let value = (match index {
-                        None => Err(CustomError::DbTableStructure),
-                        Some(value) => {
-                            let query: String = row
-                                .get(value)
-                                .expect("Value should be present in the Roo");
-
-                            Ok(query)
-                        }
-                    })?;
-
-                    Ok(value)
                 }
-            )
-            .map_err(|err| CustomError::DbQueryExecution(err.to_string()))?
+
+                let value = (match index {
+                    None => Err(CustomError::DbTableStructure),
+                    Some(value) => {
+                        let query: String =
+                            row.get(value).expect("Value should be present in the Roo");
+
+                        Ok(query)
+                    }
+                })?;
+
+                Ok(value)
+            })
+            .map_err(|err| {
+                println!("Error: {:?}", err);
+                CustomError::QueryExecution
+            })?
             .into_iter()
             .filter_map(|el| el.map_err(|err| err).ok())
             .collect();
@@ -111,7 +107,7 @@ impl DataMigrator {
     fn get_data(
         &self,
         connection: &mut PooledConn,
-        table: &str
+        table: &str,
     ) -> CustomResult<Vec<HashMap<String, mysql::Value>>> {
         let columns = self.get_columns(connection, table)?;
         let data: Vec<HashMap<String, mysql::Value>> = connection

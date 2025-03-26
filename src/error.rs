@@ -2,16 +2,11 @@ pub type CustomResult<T> = core::result::Result<T, CustomError>;
 
 #[derive(Debug)]
 pub enum CustomError {
-    DbQueryExecution(String),
+    QueryExecution,
     DbTableStructure,
     DbConnection,
+    CommandExecution,
 }
-
-// impl From<T> for CustomErrorCode {
-//     fn from(e: T) -> Self {
-//         Self::DbQuery(e)
-//     }
-// }
 
 impl std::error::Error for CustomError {}
 impl core::fmt::Display for CustomError {

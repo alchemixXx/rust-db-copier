@@ -4,6 +4,7 @@ password = "source-db-pass"
 host = "source-db-host"
 port = "source-db-port"
 database = "source-db-name"
+schema = "source-db-schema"
 
 [target]
 username = "target-user-name"
@@ -11,6 +12,10 @@ password = "target-db-pass"
 host = "target-db-host"
 port = "target-db-port"
 database = "target-db-name"
+schema = "target-db-schema"
+
+[log]
+log_level = "Info" # Debug, Info, Warn, Error
 
 [technology]
 category = "mysql"
