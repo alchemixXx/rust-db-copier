@@ -1,4 +1,5 @@
 use crate::logger::Logger;
+use crate::psql_processor::data_migrator::DataMigrator;
 use crate::{
     config::Config, psql_processor::structure_migrator::StructureMigrator,
     traits::StructureMigratorTrait,
@@ -24,12 +25,11 @@ impl Migrator {
 
         let logger = Logger::new();
 
-        let struct_migrator = StructureMigrator {
+        let struct_migrator = StructureMigrator::new(self.config.clone()).await?;
+
+        let data_migrator = DataMigrator {
             config: self.config.clone(),
         };
-        // let data_migrator = DataMigrator {
-        //     config: self.config.clone(),
-        // };
 
         logger.info("Migrating structure. start");
         let structure_migration_start_time = Instant::now();
@@ -45,12 +45,12 @@ impl Migrator {
             .as_str(),
         );
 
-        // logger.info("Migrating data");
-        // let data_migration_start_time = Instant::now();
-        // data_migrator.migrate()?;
-        // let data_migration_end_time = Instant::now();
-        // let data_migration_elapsed_time = data_migration_end_time - data_migration_start_time;
-        // logger.info("Migrated data in {:?}", data_migration_elapsed_time);
+        logger.info("Migrating data");
+        let data_migration_start_time = Instant::now();
+        // data_migrator.migrate().await?;
+        let data_migration_end_time = Instant::now();
+        let data_migration_elapsed_time = data_migration_end_time - data_migration_start_time;
+        logger.info(format!("Migrated data in {:?}", data_migration_elapsed_time).as_str());
 
         Ok(())
     }
