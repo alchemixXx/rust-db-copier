@@ -26,6 +26,8 @@ pub struct DbTechnology {
     pub category: String,
     pub use_pg_dump: bool,
     pub copy_staging_tables: Option<bool>,
+    pub copy_structure: bool,
+    pub copy_data: bool,
 }
 #[derive(Debug, Deserialize, Clone)]
 pub struct LogsConfig {
