@@ -36,7 +36,7 @@ impl Logger {
         env_logger::Builder::from_env(Env::default().default_filter_or(level.to_string())).init();
     }
 
-    pub fn trace(&self, message: &str) {
+    pub fn _trace(&self, message: &str) {
         log::trace!("{}", message);
     }
 

@@ -19,6 +19,12 @@ impl DataMigrator {
         println!("Connected to target database");
 
         for table in &self.config.tables.data_source {
+            if !self.config.technology.copy_structure {
+                println!("Truncating table: {}", table);
+                self.truncate_table(&mut target_conn, table)?;
+                println!("Truncated table: {}", table);
+            };
+
             println!("Migrating data for table: {}", table);
             let data: Vec<HashMap<String, mysql::Value>> =
                 self.get_data(&mut source_conn, table)?;
@@ -121,5 +127,29 @@ impl DataMigrator {
             .unwrap();
 
         Ok(data)
+    }
+
+    fn truncate_table(&self, connection: &mut PooledConn, table: &str) -> CustomResult<()> {
+        connection
+            .query_drop("SET FOREIGN_KEY_CHECKS = 0;")
+            .map_err(|err| {
+                println!("Error disabling foreign key checks: {:?}", err);
+                CustomError::QueryExecution
+            })?;
+
+        let truncate_query = format!("TRUNCATE TABLE {};", table);
+        connection.exec_drop(truncate_query, ()).map_err(|err| {
+            println!("Error truncating table: {:?}", err);
+            CustomError::QueryExecution
+        })?;
+
+        connection
+            .query_drop("SET FOREIGN_KEY_CHECKS = 1;")
+            .map_err(|err| {
+                println!("Error enabling foreign key checks: {:?}", err);
+                CustomError::QueryExecution
+            })?;
+
+        Ok(())
     }
 }

@@ -235,7 +235,9 @@ impl StructureMigrator {
 
 impl StructureMigratorTrait for StructureMigrator {
     async fn migrate(&self) -> CustomResult<()> {
-        if self.config.technology.use_pg_dump {
+        if self.config.technology.use_pg_dump.is_some()
+            && self.config.technology.use_pg_dump.unwrap()
+        {
             self.logger.info("Using pg_dump to migrate structure");
             self.migrate_with_pg_dump()?;
             return Ok(());
