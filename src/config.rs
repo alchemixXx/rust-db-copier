@@ -9,6 +9,7 @@ const CONFIG_FILE: &str = "config.toml";
 #[derive(Debug, Deserialize, Clone)]
 pub struct TablesConfig {
     pub data_source: Vec<String>,
+    pub skip: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -24,7 +25,7 @@ pub struct DbConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct DbTechnology {
     pub category: String,
-    pub use_pg_dump: Option<bool>,
+    pub use_pg_dump: bool,
     pub copy_staging_tables: Option<bool>,
     pub copy_structure: bool,
     pub copy_data: bool,

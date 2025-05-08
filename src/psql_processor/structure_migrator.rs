@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use regex::Regex;
 use sqlx::{FromRow, Pool, Postgres};
 
@@ -60,49 +58,6 @@ impl StructureMigrator {
 }
 
 impl StructureMigrator {
-    fn migrate_with_pg_dump(&self) -> CustomResult<()> {
-        let command = format!(
-            "PGPASSWORD='{0}' pg_dump -U {1} -h {2} -d {3} --schema={4} --schema-only | PGPASSWORD='{8}' psql -U {5} -d {6} -h {7}",
-            self.config.source.password,
-            self.config.source.username,
-            self.config.source.host,
-            self.config.source.database,
-            self.config.source.schema.as_ref().unwrap(),
-            self.config.target.username,
-            self.config.target.database,
-            self.config.target.host,
-            self.config.target.password
-        );
-
-        let output = Command::new("zsh")
-            .arg("-c")
-            .arg(&command)
-            .output()
-            .map_err(|err| {
-                self.logger
-                    .error(format!("Failed to execute pg_dump command: {}", err).as_str());
-                CustomError::CommandExecution
-            })?;
-
-        if !output.status.success() {
-            self.logger
-                .error(format!("Failed execute pg_dump command: {}", command).as_str());
-            self.logger
-                .error(format!("Error: {}", String::from_utf8_lossy(&output.stderr)).as_str());
-
-            return Err(CustomError::CommandExecution);
-        }
-
-        if !output.stderr.is_empty() {
-            self.logger
-                .error(format!("Error: {}", String::from_utf8_lossy(&output.stderr)).as_str());
-
-            return Err(CustomError::CommandExecution);
-        }
-
-        Ok(())
-    }
-
     async fn list_all_enums(&self) -> CustomResult<Vec<EnumInfo>> {
         let query = r#"
             SELECT 
@@ -235,14 +190,6 @@ impl StructureMigrator {
 
 impl StructureMigratorTrait for StructureMigrator {
     async fn migrate(&self) -> CustomResult<()> {
-        if self.config.technology.use_pg_dump.is_some()
-            && self.config.technology.use_pg_dump.unwrap()
-        {
-            self.logger.info("Using pg_dump to migrate structure");
-            self.migrate_with_pg_dump()?;
-            return Ok(());
-        }
-
         self.logger.info("Re-creating target schema");
         self.recreate_schema().await?;
         self.logger.info("Re-created target schema");
@@ -280,9 +227,9 @@ impl StructureMigratorTrait for StructureMigrator {
                 continue;
             }
 
-            // if !["cb_study_data"].contains(&table.table_name.as_str()) {
-            //     self.logger
-            //         .debug(format!("Skipping table {}", table.table_name).as_str());
+            // if !["cb_batch_runs"].contains(&table.table_name.as_str()) {
+            //     // self.logger
+            //     // .debug(format!("Skipping table {}", table.table_name).as_str());
             //     skipped.push(table.clone());
             //     continue;
             // }

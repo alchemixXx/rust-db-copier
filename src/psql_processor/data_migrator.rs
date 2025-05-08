@@ -70,7 +70,15 @@ impl DataMigrator {
         let select_query = self.get_select_string(&self.source_schema, table).await?;
 
         // Get column names for proper value extraction
-        let columns = self.get_table_columns(&self.source_schema, table).await?;
+        let raw_columns = self.get_table_columns(&self.source_schema, table).await?;
+
+        let columns = raw_columns
+            .iter()
+            .filter(|(name, _, _)| name != "id") // Exclude ID column
+            .map(|(name, data_type, is_nullable)| {
+                (name.clone(), data_type.clone(), is_nullable.clone())
+            })
+            .collect::<Vec<(String, String, String)>>();
 
         let rows = self.get_rows(&select_query).await?;
 

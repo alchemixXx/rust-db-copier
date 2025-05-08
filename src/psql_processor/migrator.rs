@@ -8,6 +8,8 @@ use std::time::Instant;
 
 use crate::error::CustomResult;
 
+use super::pg_dump_migrator::PgDumpMigrator;
+
 pub struct Migrator {
     pub config: Config,
 }
@@ -26,10 +28,9 @@ impl Migrator {
         let logger = Logger::new();
 
         if self.config.technology.copy_structure {
-            let struct_migrator = StructureMigrator::new(self.config.clone()).await?;
             logger.info("Migrating structure. start");
             let structure_migration_start_time = Instant::now();
-            struct_migrator.migrate().await?;
+            self.migrate_structure().await?;
             let structure_migration_end_time = Instant::now();
             let structure_migration_elapsed_time =
                 structure_migration_end_time - structure_migration_start_time;
@@ -45,15 +46,38 @@ impl Migrator {
         }
 
         if self.config.technology.copy_data {
-            let data_migrator = DataMigrator::init(self.config.clone()).await?;
             logger.info("Migrating data");
             let data_migration_start_time = Instant::now();
-            data_migrator.migrate().await?;
+            self.migrate_data().await?;
             let data_migration_end_time = Instant::now();
             let data_migration_elapsed_time = data_migration_end_time - data_migration_start_time;
             logger.info(format!("Migrated data in {:?}", data_migration_elapsed_time).as_str());
         } else {
             logger.warn("Skipping data migration");
+        }
+
+        Ok(())
+    }
+
+    async fn migrate_structure(&self) -> CustomResult<()> {
+        if self.config.technology.use_pg_dump {
+            let pg_dump_migrator = PgDumpMigrator::new(self.config.clone()).await?;
+            pg_dump_migrator.migrate_structure().await?;
+        } else {
+            let struct_migrator = StructureMigrator::new(self.config.clone()).await?;
+            struct_migrator.migrate().await?;
+        }
+
+        Ok(())
+    }
+
+    async fn migrate_data(&self) -> CustomResult<()> {
+        if self.config.technology.use_pg_dump {
+            let pg_dump_migrator = PgDumpMigrator::new(self.config.clone()).await?;
+            pg_dump_migrator.migrate_data().await?;
+        } else {
+            let data_migrator = DataMigrator::init(self.config.clone()).await?;
+            data_migrator.migrate().await?;
         }
 
         Ok(())

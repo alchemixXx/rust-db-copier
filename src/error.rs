@@ -6,7 +6,6 @@ pub enum CustomError {
     DbTableStructure,
     DbConnection,
     CommandExecution,
-    SchemaNotProvided,
 }
 
 impl std::error::Error for CustomError {}
